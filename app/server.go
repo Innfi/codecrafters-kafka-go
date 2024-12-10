@@ -38,8 +38,8 @@ func main() {
 
 	fmt.Printf("buffer: %s\n", string(buf))
 
-	outBuf := make([]byte, 6)
-	binary.BigEndian.PutUint32(outBuf[2:], 0x07)
+	outBuf := make([]byte, 8)
+	binary.BigEndian.PutUint32(outBuf[4:], 0x07)
 
 	_, writeErr := conn.Write(outBuf)
 	if writeErr != nil {
