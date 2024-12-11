@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/binary"
+	// "encoding/binary"
 	"fmt"
 	"net"
 	"os"
@@ -30,19 +30,35 @@ func main() {
 	defer conn.Close()
 
 	buf := make([]byte, 100)
-	_, readErr := conn.Read(buf)
+	readLen, readErr := conn.Read(buf)
 	if readErr != nil {
 		fmt.Println("read error: ", readErr.Error())
 		os.Exit(1)
 	}
 
-	fmt.Printf("buffer: %s\n", string(buf))
+	printBuf(buf, readLen)
 
 	outBuf := make([]byte, 8)
-	binary.BigEndian.PutUint32(outBuf[4:], 0x07)
+	// binary.BigEndian.PutUint32(outBuf[4:], 0x07)
+	copy(outBuf[4:8], buf[8:12])
+
+	for _, elem := range outBuf {
+		fmt.Printf("%02x ", elem)
+	}
+	fmt.Printf("\n")
 
 	_, writeErr := conn.Write(outBuf)
 	if writeErr != nil {
 		fmt.Println("write error: ", writeErr.Error())
 	}
+}
+
+func printBuf(buf []byte, readLen int) {
+	for index, elem := range buf {
+		if index >= readLen {
+			break
+		}
+		fmt.Printf("%02x", elem)
+	}
+	fmt.Printf("\n")
 }
