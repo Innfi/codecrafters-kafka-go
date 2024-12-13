@@ -37,13 +37,13 @@ func main() {
 	}
 
 	message := toMessage(buf)
-	printBuf(message.MessageSize, 4)
-	printBuf(message.RequestApiKey, 2)
-	printBuf(message.RequestApiVersion, 2)
-	printBuf(message.CorellationId, 4)
+	// printBuf(message.MessageSize, 4)
+	// printBuf(message.RequestApiKey, 2)
+	// printBuf(message.RequestApiVersion, 2)
+	// printBuf(message.CorellationId, 4)
 
 	requestApiVersion := binary.BigEndian.Uint16(message.RequestApiVersion)
-	fmt.Printf("requestApiVersion: %d\n", requestApiVersion)
+	// fmt.Printf("requestApiVersion: %d\n", requestApiVersion)
 
 	if requestApiVersion > 4 {
 		sendErrorResponse(conn, message)
