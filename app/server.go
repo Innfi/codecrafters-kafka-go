@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 )
 
 type Message struct {
-	MessageSize       []byte
 	RequestApiKey     []byte
 	RequestApiVersion []byte
 	CorellationId     []byte
+	Body              []byte
 }
 
 func main() {
@@ -27,25 +28,70 @@ func main() {
 		fmt.Println("Error accepting connection: ", err.Error())
 		os.Exit(1)
 	}
-	defer conn.Close()
 
-	buf := make([]byte, 100)
-	_, readErr := conn.Read(buf)
-	if readErr != nil {
-		fmt.Println("read error: ", readErr.Error())
-		os.Exit(1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go handleConnection(conn, &wg)
+
+	wg.Wait()
+	conn.Close()
+	// defer conn.Close()
+
+	// buf := make([]byte, 100)
+	// _, readErr := conn.Read(buf)
+	// if readErr != nil {
+	// 	fmt.Println("read error: ", readErr.Error())
+	// 	os.Exit(1)
+	// }
+
+	// message := toMessage(buf)
+	// outBuf := toOutputBuffer(message)
+
+	// _, writeErr := conn.Write(outBuf)
+	// if writeErr != nil {
+	// 	fmt.Println("write error: ", writeErr.Error())
+	// }
+}
+
+func handleConnection(conn net.Conn, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	for {
+		lenBuf := make([]byte, 4)
+		_, readErr := conn.Read(lenBuf)
+		if readErr != nil {
+			fmt.Println(readErr)
+			break
+		}
+
+		payloadLen := binary.BigEndian.Uint32(lenBuf)
+		fmt.Printf("readLen: %d\n", payloadLen)
+
+		payloadBuf := make([]byte, payloadLen)
+		_, readErr = conn.Read(payloadBuf)
+		if readErr != nil {
+			fmt.Println(readErr)
+			break
+		}
+
+		message := toMessage(payloadBuf)
+		outBuf := toOutputBuffer(message)
+
+		_, writeErr := conn.Write(outBuf)
+		if writeErr != nil {
+			fmt.Println("write error: ", writeErr.Error())
+		}
 	}
+}
 
-	message := toMessage(buf)
-
+func toOutputBuffer(message Message) []byte {
 	requestApiVersion := binary.BigEndian.Uint16(message.RequestApiVersion)
-
 	if requestApiVersion > 4 {
-		sendErrorResponse(conn, message)
-		os.Exit(0)
+		return toErrorBuffer(message.CorellationId)
 	}
 
-	sendOkResponse(conn, message)
+	return toOkBuffer(message.CorellationId)
 }
 
 // func printBuf(buf []byte, readLen int) {
@@ -59,24 +105,17 @@ func main() {
 // }
 
 func toMessage(buf []byte) Message {
-	// for index, elem := range buf {
-	// 	if index > 13 {
-	// 		break
-	// 	}
-	// 	fmt.Printf("index: %d, elem: %02x\n", index, elem)
-	// }
-
 	return Message{
-		MessageSize:       buf[0:4],
-		RequestApiKey:     buf[4:6],
-		RequestApiVersion: buf[6:8],
-		CorellationId:     buf[8:12],
+		RequestApiKey:     buf[0:2],
+		RequestApiVersion: buf[2:4],
+		CorellationId:     buf[4:8],
+		Body:              buf[8:],
 	}
 }
 
-func sendErrorResponse(conn net.Conn, message Message) {
+func toErrorBuffer(corellationId []byte) []byte {
 	errOutput := make([]byte, 4)
-	copy(errOutput, message.CorellationId)
+	copy(errOutput, corellationId)
 
 	errorCode := []byte{0x00, 0x23}
 	errOutput = append(errOutput, errorCode...)
@@ -85,15 +124,12 @@ func sendErrorResponse(conn net.Conn, message Message) {
 	binary.BigEndian.PutUint32(outBuf, uint32(len(errOutput)))
 	outBuf = append(outBuf, errOutput...)
 
-	_, writeErr := conn.Write(outBuf)
-	if writeErr != nil {
-		fmt.Println("write error: ", writeErr.Error())
-	}
+	return outBuf
 }
 
-func sendOkResponse(conn net.Conn, message Message) {
+func toOkBuffer(corellationId []byte) []byte {
 	okOutput := make([]byte, 4)
-	copy(okOutput, message.CorellationId)
+	copy(okOutput, corellationId)
 
 	okOutput = append(okOutput, []byte{0x00, 0x00}...)
 	okOutput = append(okOutput, []byte{
@@ -118,8 +154,5 @@ func sendOkResponse(conn net.Conn, message Message) {
 	binary.BigEndian.PutUint32(outBuf, uint32(len(okOutput)))
 	outBuf = append(outBuf, okOutput...)
 
-	_, writeErr := conn.Write(outBuf)
-	if writeErr != nil {
-		fmt.Println("write error: ", writeErr.Error())
-	}
+	return outBuf
 }
