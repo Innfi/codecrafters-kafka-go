@@ -5,7 +5,16 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"sync"
+)
+
+type Context struct {
+	conn net.Conn
+}
+
+var (
+	contexts   = make(map[*Context]bool)
+	register   = make(chan *Context)
+	unregister = make(chan *Context)
 )
 
 type Message struct {
@@ -23,53 +32,53 @@ func main() {
 		fmt.Println("Failed to bind to port 9092")
 		os.Exit(1)
 	}
-	conn, connErr := l.Accept()
-	if connErr != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
+
+	go handleMessage()
+
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection:", err.Error())
+			continue
+		}
+
+		context := &Context{conn: conn}
+		register <- context
+		go handleContext(context)
 	}
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	go handleConnection(conn, &wg)
-
-	wg.Wait()
-	conn.Close()
-	// defer conn.Close()
-
-	// buf := make([]byte, 100)
-	// _, readErr := conn.Read(buf)
-	// if readErr != nil {
-	// 	fmt.Println("read error: ", readErr.Error())
-	// 	os.Exit(1)
-	// }
-
-	// message := toMessage(buf)
-	// outBuf := toOutputBuffer(message)
-
-	// _, writeErr := conn.Write(outBuf)
-	// if writeErr != nil {
-	// 	fmt.Println("write error: ", writeErr.Error())
-	// }
 }
 
-func handleConnection(conn net.Conn, wg *sync.WaitGroup) {
-	defer wg.Done()
+func handleMessage() {
+	for {
+		select {
+		case context := <-register:
+			fmt.Println("received register by channel")
+			contexts[context] = true
+		case context := <-unregister:
+			fmt.Println("received unregister by channel")
+			delete(contexts, context)
+		}
+	}
+}
+
+func handleContext(context *Context) {
+	defer func() {
+		unregister <- context
+		context.conn.Close()
+	}()
 
 	for {
 		lenBuf := make([]byte, 4)
-		_, readErr := conn.Read(lenBuf)
+		_, readErr := context.conn.Read(lenBuf)
 		if readErr != nil {
 			fmt.Println(readErr)
 			break
 		}
 
 		payloadLen := binary.BigEndian.Uint32(lenBuf)
-		fmt.Printf("readLen: %d\n", payloadLen)
 
 		payloadBuf := make([]byte, payloadLen)
-		_, readErr = conn.Read(payloadBuf)
+		_, readErr = context.conn.Read(payloadBuf)
 		if readErr != nil {
 			fmt.Println(readErr)
 			break
@@ -78,7 +87,7 @@ func handleConnection(conn net.Conn, wg *sync.WaitGroup) {
 		message := toMessage(payloadBuf)
 		outBuf := toOutputBuffer(message)
 
-		_, writeErr := conn.Write(outBuf)
+		_, writeErr := context.conn.Write(outBuf)
 		if writeErr != nil {
 			fmt.Println("write error: ", writeErr.Error())
 		}
@@ -93,16 +102,6 @@ func toOutputBuffer(message Message) []byte {
 
 	return toOkBuffer(message.CorellationId)
 }
-
-// func printBuf(buf []byte, readLen int) {
-// 	for index, elem := range buf {
-// 		if index >= readLen {
-// 			break
-// 		}
-// 		fmt.Printf("%02x ", elem)
-// 	}
-// 	fmt.Printf("\n")
-// }
 
 func toMessage(buf []byte) Message {
 	return Message{
@@ -156,3 +155,13 @@ func toOkBuffer(corellationId []byte) []byte {
 
 	return outBuf
 }
+
+// func printBuf(buf []byte, readLen int) {
+// 	for index, elem := range buf {
+// 		if index >= readLen {
+// 			break
+// 		}
+// 		fmt.Printf("%02x ", elem)
+// 	}
+// 	fmt.Printf("\n")
+// }
