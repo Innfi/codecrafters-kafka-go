@@ -2,6 +2,15 @@ package main
 
 import "encoding/binary"
 
+func ToVersionsResponse(message *Message) []byte {
+	requestApiVersion := binary.BigEndian.Uint16(message.RequestApiVersion)
+	if requestApiVersion > 4 {
+		return ToErrorBuffer(message.CorellationId)
+	}
+
+	return ToOkBuffer(message.CorellationId)
+}
+
 func ToOkBuffer(corellationId []byte) []byte {
 	okOutput := make([]byte, 4)
 	copy(okOutput, corellationId)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 )
@@ -43,8 +44,10 @@ func (listener InnfisListener) Run() {
 			continue
 		}
 
-		context := Context{conn: conn}
-		listener.registerChannel <- &context
+		context := &Context{conn: conn}
+		listener.registerChannel <- context
+
+		go listener.handleRequest(context)
 	}
 }
 
@@ -59,4 +62,46 @@ func (listener InnfisListener) handleChannelMessage() {
 			delete(listener.contexts, context)
 		}
 	}
+}
+
+func (listener InnfisListener) handleRequest(context *Context) {
+	defer func() {
+		listener.unregisterChannel <- context
+		context.conn.Close()
+	}()
+
+	for {
+		message, err := listener.byteToMessage(context)
+		if err != nil {
+			fmt.Println("handleRequest error: ", err)
+			break
+		}
+
+		// TODO: what is the code for each api?
+
+		outBuf := ToVersionsResponse(message)
+		_, writeErr := context.conn.Write(outBuf)
+		if writeErr != nil {
+			fmt.Println("handleRequest error: ", writeErr.Error())
+			break
+		}
+	}
+}
+
+func (listern InnfisListener) byteToMessage(context *Context) (*Message, error) {
+	requestLengthBuffer := make([]byte, 4)
+	_, readErr := context.conn.Read(requestLengthBuffer)
+	if readErr != nil {
+		return nil, readErr
+	}
+
+	payloadLen := binary.BigEndian.Uint32(requestLengthBuffer)
+	payloadBuffer := make([]byte, payloadLen)
+	_, readErr = context.conn.Read(payloadBuffer)
+	if readErr != nil {
+		return nil, readErr
+	}
+
+	message := ToMessage(payloadBuffer)
+	return &message, nil
 }
