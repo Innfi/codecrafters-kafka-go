@@ -77,9 +77,12 @@ func (listener InnfisListener) handleRequest(context *Context) {
 			break
 		}
 
-		// TODO: what is the code for each api?
+		outBuf, handleErr := listener.handleRequestByApiKey(message)
+		if handleErr != nil {
+			fmt.Println("handleRequest error: ", handleErr.Error())
+			break
+		}
 
-		outBuf := ToVersionsResponse(message)
 		_, writeErr := context.conn.Write(outBuf)
 		if writeErr != nil {
 			fmt.Println("handleRequest error: ", writeErr.Error())
@@ -104,4 +107,17 @@ func (listern InnfisListener) byteToMessage(context *Context) (*Message, error) 
 
 	message := ToMessage(payloadBuffer)
 	return &message, nil
+}
+
+func (listener InnfisListener) handleRequestByApiKey(message *Message) ([]byte, error) {
+	effectiveKey := binary.BigEndian.Uint16(message.RequestApiKey)
+
+	switch effectiveKey {
+	case 18: // TODO: to iota?
+		return ToVersionsResponse(message), nil
+	case 75:
+		return ToDescribeTopicPartitionsResponse(message), nil
+	default:
+		return []byte{}, fmt.Errorf("invalid api key: %d", effectiveKey)
+	}
 }
